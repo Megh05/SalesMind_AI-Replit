@@ -1,71 +1,92 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PersonaCard, Persona } from "@/components/PersonaCard";
+import { PersonaCard } from "@/components/PersonaCard";
 import { CreatePersonaDialog } from "@/components/CreatePersonaDialog";
 import { Plus, Search } from "lucide-react";
-
-//todo: remove mock functionality
-const mockPersonas: Persona[] = [
-  {
-    id: "1",
-    name: "Tech Sales Pro",
-    tone: "Professional",
-    industry: "Technology",
-    description: "Expert in B2B SaaS sales with a consultative approach. Uses data-driven insights to personalize outreach.",
-    messageCount: 1234,
-  },
-  {
-    id: "2",
-    name: "Friendly Advisor",
-    tone: "Friendly",
-    industry: "Finance",
-    description: "Warm and approachable persona focused on building long-term relationships with financial services clients.",
-    messageCount: 892,
-  },
-  {
-    id: "3",
-    name: "Executive Connector",
-    tone: "Formal",
-    industry: "Enterprise",
-    description: "High-level persona for C-suite outreach with sophisticated language and strategic positioning.",
-    messageCount: 567,
-  },
-  {
-    id: "4",
-    name: "Startup Enthusiast",
-    tone: "Enthusiastic",
-    industry: "Startups",
-    description: "Energetic and innovative persona tailored for early-stage companies and founders.",
-    messageCount: 743,
-  },
-  {
-    id: "5",
-    name: "Healthcare Specialist",
-    tone: "Professional",
-    industry: "Healthcare",
-    description: "Compliant and knowledgeable persona for healthcare industry outreach with regulatory awareness.",
-    messageCount: 456,
-  },
-  {
-    id: "6",
-    name: "Retail Expert",
-    tone: "Casual",
-    industry: "Retail",
-    description: "Conversational persona optimized for retail and e-commerce businesses.",
-    messageCount: 621,
-  },
-];
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import type { Persona } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Personas() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const { toast } = useToast();
 
-  const filteredPersonas = mockPersonas.filter((persona) =>
+  const { data: personas = [], isLoading } = useQuery<Persona[]>({
+    queryKey: ["/api/personas"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/personas/${id}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/personas"] });
+      toast({
+        title: "Success",
+        description: "Persona deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete persona",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: async (persona: Persona) => {
+      const { id, messageCount, createdAt, updatedAt, systemPrompt, ...data } = persona;
+      return apiRequest("/api/personas", "POST", { ...data, name: `${data.name} (Copy)` });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/personas"] });
+      toast({
+        title: "Success",
+        description: "Persona duplicated successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to duplicate persona",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const filteredPersonas = personas.filter((persona) =>
     persona.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     persona.industry.toLowerCase().includes(searchQuery.toLowerCase()) ||
     persona.tone.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleCreatePersona = async (data: any) => {
+    try {
+      await apiRequest("/api/personas", "POST", data);
+      queryClient.invalidateQueries({ queryKey: ["/api/personas"] });
+      toast({
+        title: "Success",
+        description: "Persona created successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create persona",
+        variant: "destructive",
+      });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-muted-foreground">Loading personas...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -93,22 +114,28 @@ export default function Personas() {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredPersonas.map((persona) => (
-          <PersonaCard
-            key={persona.id}
-            persona={persona}
-            onEdit={() => console.log("Edit persona:", persona.id)}
-            onDuplicate={() => console.log("Duplicate persona:", persona.id)}
-            onDelete={() => console.log("Delete persona:", persona.id)}
-          />
-        ))}
-      </div>
+      {filteredPersonas.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">No personas found. Create your first AI persona to get started.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredPersonas.map((persona) => (
+            <PersonaCard
+              key={persona.id}
+              persona={persona}
+              onEdit={() => console.log("Edit persona:", persona.id)}
+              onDuplicate={() => duplicateMutation.mutate(persona)}
+              onDelete={() => deleteMutation.mutate(persona.id)}
+            />
+          ))}
+        </div>
+      )}
 
       <CreatePersonaDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        onSubmit={(data) => console.log("Persona created:", data)}
+        onSubmit={handleCreatePersona}
       />
     </div>
   );

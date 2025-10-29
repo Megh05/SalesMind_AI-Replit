@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import {
   insertLeadSchema,
@@ -11,7 +12,8 @@ import {
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 
-export function registerRoutes(app: Express) {
+export function registerRoutes(app: Express): Server {
+  const httpServer = createServer(app);
   // ============================================
   // LEAD ROUTES
   // ============================================
@@ -511,4 +513,6 @@ The message should be professional, concise, and include a clear call-to-action.
       res.status(500).json({ error: error.message });
     }
   });
+
+  return httpServer;
 }

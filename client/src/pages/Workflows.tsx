@@ -1,81 +1,82 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { WorkflowCard, WorkflowItem } from "@/components/WorkflowCard";
+import { WorkflowCard } from "@/components/WorkflowCard";
 import { Plus, Search } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import type { Workflow } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 
-//todo: remove mock functionality
-const mockWorkflows: WorkflowItem[] = [
-  {
-    id: "1",
-    name: "Cold Outreach Sequence",
-    description: "AI-powered multi-channel outreach with automated follow-ups and engagement tracking",
-    status: "active",
-    nodeCount: 7,
-    executionCount: 342,
-    successRate: 87,
-  },
-  {
-    id: "2",
-    name: "Lead Nurture Campaign",
-    description: "Automated nurture sequence for warm leads with personalized messaging",
-    status: "active",
-    nodeCount: 5,
-    executionCount: 156,
-    successRate: 92,
-  },
-  {
-    id: "3",
-    name: "Re-engagement Flow",
-    description: "Win back dormant leads with personalized messaging and special offers",
-    status: "paused",
-    nodeCount: 4,
-    executionCount: 89,
-    successRate: 64,
-  },
-  {
-    id: "4",
-    name: "Product Demo Scheduler",
-    description: "Automatically schedule product demos based on lead qualification",
-    status: "active",
-    nodeCount: 6,
-    executionCount: 234,
-    successRate: 95,
-  },
-  {
-    id: "5",
-    name: "LinkedIn Outreach",
-    description: "Professional LinkedIn connection and messaging campaign",
-    status: "active",
-    nodeCount: 4,
-    executionCount: 128,
-    successRate: 73,
-  },
-  {
-    id: "6",
-    name: "Post-Demo Follow-up",
-    description: "Automated follow-up sequence after product demonstrations",
-    status: "draft",
-    nodeCount: 3,
-    executionCount: 0,
-    successRate: 0,
-  },
-];
+interface WorkflowWithStats extends Workflow {
+  nodeCount: number;
+  successRate: number;
+}
 
 export default function Workflows() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
-  const filteredWorkflows = mockWorkflows.filter((workflow) => {
+  const { data: workflows = [], isLoading } = useQuery<WorkflowWithStats[]>({
+    queryKey: ["/api/workflows"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/workflows/${id}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
+      toast({
+        title: "Success",
+        description: "Workflow deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete workflow",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest(`/api/workflows/${id}`, "PATCH", { status: status === "active" ? "paused" : "active" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workflows"] });
+      toast({
+        title: "Success",
+        description: "Workflow status updated",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update workflow status",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const filteredWorkflows = workflows.filter((workflow) => {
     const matchesSearch =
       workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       workflow.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || workflow.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-muted-foreground">Loading workflows...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -113,18 +114,32 @@ export default function Workflows() {
         </Tabs>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredWorkflows.map((workflow) => (
-          <WorkflowCard
-            key={workflow.id}
-            workflow={workflow}
-            onEdit={() => setLocation(`/workflows/${workflow.id}`)}
-            onRun={() => console.log("Run workflow:", workflow.id)}
-            onDuplicate={() => console.log("Duplicate workflow:", workflow.id)}
-            onDelete={() => console.log("Delete workflow:", workflow.id)}
-          />
-        ))}
-      </div>
+      {filteredWorkflows.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">No workflows found. Create your first workflow to get started.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredWorkflows.map((workflow) => (
+            <WorkflowCard
+              key={workflow.id}
+              workflow={{
+                id: workflow.id,
+                name: workflow.name,
+                description: workflow.description,
+                status: workflow.status as any,
+                nodeCount: workflow.nodeCount,
+                executionCount: workflow.executionCount,
+                successRate: workflow.successRate,
+              }}
+              onEdit={() => setLocation(`/workflows/${workflow.id}`)}
+              onRun={() => toggleStatusMutation.mutate({ id: workflow.id, status: workflow.status })}
+              onDuplicate={() => console.log("Duplicate workflow:", workflow.id)}
+              onDelete={() => deleteMutation.mutate(workflow.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

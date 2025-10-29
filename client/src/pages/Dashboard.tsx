@@ -1,44 +1,38 @@
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/StatCard";
-import { WorkflowCard, WorkflowItem } from "@/components/WorkflowCard";
+import { WorkflowCard } from "@/components/WorkflowCard";
 import { EngagementChart } from "@/components/AnalyticsChart";
 import { Users, Mail, TrendingUp, Target, Plus } from "lucide-react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import type { Workflow } from "@shared/schema";
 
-//todo: remove mock functionality
-const mockWorkflows: WorkflowItem[] = [
-  {
-    id: "1",
-    name: "Cold Outreach Sequence",
-    description: "AI-powered multi-channel outreach with automated follow-ups",
-    status: "active",
-    nodeCount: 7,
-    executionCount: 342,
-    successRate: 87,
-  },
-  {
-    id: "2",
-    name: "Lead Nurture Campaign",
-    description: "Automated nurture sequence for warm leads",
-    status: "active",
-    nodeCount: 5,
-    executionCount: 156,
-    successRate: 92,
-  },
-  {
-    id: "3",
-    name: "Re-engagement Flow",
-    description: "Win back dormant leads with personalized messaging",
-    status: "paused",
-    nodeCount: 4,
-    executionCount: 89,
-    successRate: 64,
-  },
-];
+interface WorkflowWithStats extends Workflow {
+  nodeCount: number;
+  successRate: number;
+}
+
+interface DashboardStats {
+  stats: {
+    totalLeads: number;
+    messagesSent: number;
+    engagementRate: string;
+    conversionRate: string;
+  };
+}
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
+
+  const { data: dashboardData } = useQuery<DashboardStats>({
+    queryKey: ["/api/analytics/dashboard"],
+  });
+
+  const { data: workflows = [] } = useQuery<WorkflowWithStats[]>({
+    queryKey: ["/api/workflows"],
+  });
+
+  const activeWorkflows = workflows.filter((w) => w.status === "active").slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -58,28 +52,28 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Leads"
-          value="2,543"
+          value={dashboardData?.stats.totalLeads.toLocaleString() || "0"}
           change="+12% from last month"
           icon={Users}
           trend="up"
         />
         <StatCard
           title="Messages Sent"
-          value="8,234"
+          value={dashboardData?.stats.messagesSent.toLocaleString() || "0"}
           change="+23% from last month"
           icon={Mail}
           trend="up"
         />
         <StatCard
           title="Engagement Rate"
-          value="42.3%"
+          value={dashboardData?.stats.engagementRate || "0%"}
           change="+5.2% from last month"
           icon={TrendingUp}
           trend="up"
         />
         <StatCard
           title="Conversion Rate"
-          value="18.7%"
+          value={dashboardData?.stats.conversionRate || "0%"}
           change="-2.1% from last month"
           icon={Target}
           trend="down"
@@ -95,18 +89,32 @@ export default function Dashboard() {
             View All
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mockWorkflows.map((workflow) => (
-            <WorkflowCard
-              key={workflow.id}
-              workflow={workflow}
-              onEdit={() => setLocation(`/workflows/${workflow.id}`)}
-              onRun={() => console.log("Run workflow:", workflow.id)}
-              onDuplicate={() => console.log("Duplicate workflow:", workflow.id)}
-              onDelete={() => console.log("Delete workflow:", workflow.id)}
-            />
-          ))}
-        </div>
+        {activeWorkflows.length === 0 ? (
+          <div className="text-center py-12 border rounded-lg">
+            <p className="text-muted-foreground">No active workflows. Create one to get started.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeWorkflows.map((workflow) => (
+              <WorkflowCard
+                key={workflow.id}
+                workflow={{
+                  id: workflow.id,
+                  name: workflow.name,
+                  description: workflow.description,
+                  status: workflow.status as any,
+                  nodeCount: workflow.nodeCount,
+                  executionCount: workflow.executionCount,
+                  successRate: workflow.successRate,
+                }}
+                onEdit={() => setLocation(`/workflows/${workflow.id}`)}
+                onRun={() => console.log("Run workflow:", workflow.id)}
+                onDuplicate={() => console.log("Duplicate workflow:", workflow.id)}
+                onDelete={() => console.log("Delete workflow:", workflow.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

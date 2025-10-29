@@ -1,11 +1,85 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
+import { useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 export default function Settings() {
+  const { toast } = useToast();
+  const [sendgridKey, setSendgridKey] = useState("");
+  const [twilioSid, setTwilioSid] = useState("");
+  const [twilioToken, setTwilioToken] = useState("");
+  const [openrouterKey, setOpenrouterKey] = useState("");
+
+  const saveIntegrationMutation = useMutation({
+    mutationFn: ({ provider, config }: { provider: string; config: any }) =>
+      apiRequest(`/api/integrations/${provider}`, "PUT", { provider, config, isActive: true }),
+    onSuccess: (_: any, variables: { provider: string; config: any }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
+      toast({
+        title: "Success",
+        description: `${variables.provider} integration saved successfully`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save integration settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveSendGrid = () => {
+    if (!sendgridKey) {
+      toast({
+        title: "Error",
+        description: "Please enter a SendGrid API key",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveIntegrationMutation.mutate({
+      provider: "sendgrid",
+      config: { apiKey: sendgridKey },
+    });
+  };
+
+  const handleSaveTwilio = () => {
+    if (!twilioSid || !twilioToken) {
+      toast({
+        title: "Error",
+        description: "Please enter both Twilio Account SID and Auth Token",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveIntegrationMutation.mutate({
+      provider: "twilio",
+      config: { accountSid: twilioSid, authToken: twilioToken },
+    });
+  };
+
+  const handleSaveOpenRouter = () => {
+    if (!openrouterKey) {
+      toast({
+        title: "Error",
+        description: "Please enter an OpenRouter API key",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveIntegrationMutation.mutate({
+      provider: "openrouter",
+      config: { apiKey: openrouterKey },
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -54,15 +128,24 @@ export default function Settings() {
             <CardHeader>
               <CardTitle>Email Provider</CardTitle>
               <CardDescription>
-                Configure your email sending service
+                Configure your email sending service (SendGrid recommended)
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label htmlFor="sendgrid-key">SendGrid API Key</Label>
-                <Input id="sendgrid-key" type="password" placeholder="Enter API key" data-testid="input-sendgrid-key" />
+                <Input
+                  id="sendgrid-key"
+                  type="password"
+                  placeholder="Enter API key"
+                  value={sendgridKey}
+                  onChange={(e) => setSendgridKey(e.target.value)}
+                  data-testid="input-sendgrid-key"
+                />
               </div>
-              <Button data-testid="button-save-sendgrid">Save</Button>
+              <Button onClick={handleSaveSendGrid} data-testid="button-save-sendgrid">
+                Save SendGrid Settings
+              </Button>
             </CardContent>
           </Card>
 
@@ -76,13 +159,28 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label htmlFor="twilio-sid">Account SID</Label>
-                <Input id="twilio-sid" placeholder="Enter Account SID" data-testid="input-twilio-sid" />
+                <Input
+                  id="twilio-sid"
+                  placeholder="Enter Account SID"
+                  value={twilioSid}
+                  onChange={(e) => setTwilioSid(e.target.value)}
+                  data-testid="input-twilio-sid"
+                />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="twilio-token">Auth Token</Label>
-                <Input id="twilio-token" type="password" placeholder="Enter Auth Token" data-testid="input-twilio-token" />
+                <Input
+                  id="twilio-token"
+                  type="password"
+                  placeholder="Enter Auth Token"
+                  value={twilioToken}
+                  onChange={(e) => setTwilioToken(e.target.value)}
+                  data-testid="input-twilio-token"
+                />
               </div>
-              <Button data-testid="button-save-twilio">Save</Button>
+              <Button onClick={handleSaveTwilio} data-testid="button-save-twilio">
+                Save Twilio Settings
+              </Button>
             </CardContent>
           </Card>
 
@@ -90,15 +188,35 @@ export default function Settings() {
             <CardHeader>
               <CardTitle>AI Provider</CardTitle>
               <CardDescription>
-                Configure OpenRouter / Mistral AI for message generation
+                Configure OpenRouter for Mistral AI message generation
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label htmlFor="openrouter-key">OpenRouter API Key</Label>
-                <Input id="openrouter-key" type="password" placeholder="Enter API key" data-testid="input-openrouter-key" />
+                <Input
+                  id="openrouter-key"
+                  type="password"
+                  placeholder="Enter API key"
+                  value={openrouterKey}
+                  onChange={(e) => setOpenrouterKey(e.target.value)}
+                  data-testid="input-openrouter-key"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Get your API key from{" "}
+                  <a
+                    href="https://openrouter.ai/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    openrouter.ai/keys
+                  </a>
+                </p>
               </div>
-              <Button data-testid="button-save-openrouter">Save</Button>
+              <Button onClick={handleSaveOpenRouter} data-testid="button-save-openrouter">
+                Save OpenRouter Settings
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

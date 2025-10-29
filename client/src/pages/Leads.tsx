@@ -1,81 +1,75 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LeadTable, Lead } from "@/components/LeadTable";
+import { LeadTable } from "@/components/LeadTable";
 import { CreateLeadDialog } from "@/components/CreateLeadDialog";
 import { Plus, Upload, Download, Search } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-//todo: remove mock functionality
-const mockLeads: Lead[] = [
-  {
-    id: "1",
-    name: "Sarah Chen",
-    company: "TechCorp Inc",
-    status: "qualified",
-    lastContact: "2 hours ago",
-    channel: "email",
-    score: 92,
-  },
-  {
-    id: "2",
-    name: "Michael Roberts",
-    company: "Innovate Labs",
-    status: "engaged",
-    lastContact: "1 day ago",
-    channel: "linkedin",
-    score: 78,
-  },
-  {
-    id: "3",
-    name: "Emily Watson",
-    company: "Global Solutions",
-    status: "contacted",
-    lastContact: "3 days ago",
-    channel: "sms",
-    score: 65,
-  },
-  {
-    id: "4",
-    name: "David Kim",
-    company: "Future Tech",
-    status: "new",
-    lastContact: "5 days ago",
-    channel: "email",
-    score: 54,
-  },
-  {
-    id: "5",
-    name: "Jessica Martinez",
-    company: "Alpha Systems",
-    status: "converted",
-    lastContact: "1 week ago",
-    channel: "calendar",
-    score: 98,
-  },
-  {
-    id: "6",
-    name: "Robert Johnson",
-    company: "Digital Ventures",
-    status: "new",
-    lastContact: "2 weeks ago",
-    channel: "email",
-    score: 48,
-  },
-];
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import type { Lead } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Leads() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const { toast } = useToast();
 
-  const filteredLeads = mockLeads.filter((lead) => {
+  const { data: leads = [], isLoading } = useQuery<Lead[]>({
+    queryKey: ["/api/leads"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/leads/${id}`, "DELETE"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({
+        title: "Success",
+        description: "Lead deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete lead",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const filteredLeads = leads.filter((lead) => {
     const matchesSearch =
       lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lead.company.toLowerCase().includes(searchQuery.toLowerCase());
+      (lead.company && lead.company.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesStatus = statusFilter === "all" || lead.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const handleCreateLead = async (data: any) => {
+    try {
+      await apiRequest("/api/leads", "POST", data);
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({
+        title: "Success",
+        description: "Lead created successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create lead",
+        variant: "destructive",
+      });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-muted-foreground">Loading leads...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -125,16 +119,32 @@ export default function Leads() {
         </Tabs>
       </div>
 
-      <LeadTable
-        leads={filteredLeads}
-        onEdit={(lead) => console.log("Edit lead:", lead)}
-        onDelete={(lead) => console.log("Delete lead:", lead)}
-      />
+      {filteredLeads.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">No leads found. Create your first lead to get started.</p>
+        </div>
+      ) : (
+        <LeadTable
+          leads={filteredLeads.map((lead) => ({
+            id: lead.id,
+            name: lead.name,
+            company: lead.company || "",
+            status: lead.status as any,
+            lastContact: lead.lastContactedAt
+              ? new Date(lead.lastContactedAt).toLocaleString()
+              : "Never",
+            channel: lead.channel as any,
+            score: lead.score,
+          }))}
+          onEdit={(lead) => console.log("Edit lead:", lead)}
+          onDelete={(lead) => deleteMutation.mutate(lead.id)}
+        />
+      )}
 
       <CreateLeadDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        onSubmit={(data) => console.log("Lead created:", data)}
+        onSubmit={handleCreateLead}
       />
     </div>
   );
