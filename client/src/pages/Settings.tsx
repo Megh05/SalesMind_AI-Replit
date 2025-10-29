@@ -12,8 +12,11 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 export default function Settings() {
   const { toast } = useToast();
   const [sendgridKey, setSendgridKey] = useState("");
+  const [sendgridFromEmail, setSendgridFromEmail] = useState("");
+  const [sendgridFromName, setSendgridFromName] = useState("");
   const [twilioSid, setTwilioSid] = useState("");
   const [twilioToken, setTwilioToken] = useState("");
+  const [twilioFromNumber, setTwilioFromNumber] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
 
   const saveIntegrationMutation = useMutation({
@@ -36,32 +39,40 @@ export default function Settings() {
   });
 
   const handleSaveSendGrid = () => {
-    if (!sendgridKey) {
+    if (!sendgridKey || !sendgridFromEmail) {
       toast({
         title: "Error",
-        description: "Please enter a SendGrid API key",
+        description: "Please enter SendGrid API key and sender email",
         variant: "destructive",
       });
       return;
     }
     saveIntegrationMutation.mutate({
       provider: "sendgrid",
-      config: { apiKey: sendgridKey },
+      config: { 
+        apiKey: sendgridKey,
+        fromEmail: sendgridFromEmail,
+        fromName: sendgridFromName || "OmniReach"
+      },
     });
   };
 
   const handleSaveTwilio = () => {
-    if (!twilioSid || !twilioToken) {
+    if (!twilioSid || !twilioToken || !twilioFromNumber) {
       toast({
         title: "Error",
-        description: "Please enter both Twilio Account SID and Auth Token",
+        description: "Please enter Twilio credentials and phone number",
         variant: "destructive",
       });
       return;
     }
     saveIntegrationMutation.mutate({
       provider: "twilio",
-      config: { accountSid: twilioSid, authToken: twilioToken },
+      config: { 
+        accountSid: twilioSid, 
+        authToken: twilioToken,
+        fromNumber: twilioFromNumber
+      },
     });
   };
 
@@ -143,6 +154,27 @@ export default function Settings() {
                   data-testid="input-sendgrid-key"
                 />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="sendgrid-from-email">Sender Email Address</Label>
+                <Input
+                  id="sendgrid-from-email"
+                  type="email"
+                  placeholder="sales@yourcompany.com"
+                  value={sendgridFromEmail}
+                  onChange={(e) => setSendgridFromEmail(e.target.value)}
+                  data-testid="input-sendgrid-from-email"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="sendgrid-from-name">Sender Name (Optional)</Label>
+                <Input
+                  id="sendgrid-from-name"
+                  placeholder="Your Sales Team"
+                  value={sendgridFromName}
+                  onChange={(e) => setSendgridFromName(e.target.value)}
+                  data-testid="input-sendgrid-from-name"
+                />
+              </div>
               <Button onClick={handleSaveSendGrid} data-testid="button-save-sendgrid">
                 Save SendGrid Settings
               </Button>
@@ -176,6 +208,16 @@ export default function Settings() {
                   value={twilioToken}
                   onChange={(e) => setTwilioToken(e.target.value)}
                   data-testid="input-twilio-token"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="twilio-from-number">Phone Number</Label>
+                <Input
+                  id="twilio-from-number"
+                  placeholder="+1234567890"
+                  value={twilioFromNumber}
+                  onChange={(e) => setTwilioFromNumber(e.target.value)}
+                  data-testid="input-twilio-from-number"
                 />
               </div>
               <Button onClick={handleSaveTwilio} data-testid="button-save-twilio">

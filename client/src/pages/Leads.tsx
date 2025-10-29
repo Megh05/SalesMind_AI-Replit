@@ -63,6 +63,54 @@ export default function Leads() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      window.open("/api/leads/export/csv", "_blank");
+      toast({
+        title: "Success",
+        description: "Leads exported successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to export leads",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleImport = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv";
+    input.onchange = async (e: any) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const csvData = event.target?.result as string;
+          const result: any = await apiRequest("/api/leads/import/csv", "POST", { csvData });
+          
+          queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+          toast({
+            title: "Success",
+            description: `Imported ${result.imported} leads${result.errors > 0 ? ` (${result.errors} errors)` : ""}`,
+          });
+        } catch (error) {
+          toast({
+            title: "Error",
+            description: "Failed to import leads",
+            variant: "destructive",
+          });
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -81,11 +129,11 @@ export default function Leads() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" data-testid="button-import-leads">
+          <Button variant="outline" onClick={handleImport} data-testid="button-import-leads">
             <Upload className="h-4 w-4 mr-2" />
             Import CSV
           </Button>
-          <Button variant="outline" data-testid="button-export-leads">
+          <Button variant="outline" onClick={handleExport} data-testid="button-export-leads">
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>

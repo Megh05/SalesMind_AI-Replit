@@ -11,6 +11,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import Papa from "papaparse";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -75,6 +76,93 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ error: "Lead not found" });
       }
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/leads/export/csv", async (req, res) => {
+    try {
+      const leads = await storage.getLeads();
+      
+      const data = leads.map(lead => ({
+        Name: lead.name,
+        Email: lead.email,
+        Company: lead.company || "",
+        Phone: lead.phone || "",
+        Status: lead.status,
+        Channel: lead.channel,
+        Score: lead.score,
+        "Last Contacted": lead.lastContactedAt?.toISOString() || "",
+        "Created At": lead.createdAt.toISOString()
+      }));
+
+      const csv = Papa.unparse(data);
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", 'attachment; filename="leads.csv"');
+      res.send(csv);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/leads/import/csv", async (req, res) => {
+    try {
+      const { csvData } = req.body;
+      
+      if (!csvData || typeof csvData !== "string") {
+        return res.status(400).json({ error: "CSV data is required" });
+      }
+
+      const parseResult = Papa.parse(csvData, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim(),
+      });
+
+      if (parseResult.errors.length > 0) {
+        return res.status(400).json({ 
+          error: "CSV parsing failed",
+          details: parseResult.errors
+        });
+      }
+
+      const imported: any[] = [];
+      const errors: any[] = [];
+
+      for (let i = 0; i < parseResult.data.length; i++) {
+        try {
+          const row: any = parseResult.data[i];
+          const leadData: any = {
+            name: row.Name || row.name,
+            email: row.Email || row.email,
+            company: row.Company || row.company || undefined,
+            phone: row.Phone || row.phone || undefined,
+            status: row.Status || row.status || "new",
+            channel: row.Channel || row.channel || "email",
+            score: parseInt(row.Score || row.score || "0") || 0,
+          };
+
+          const parsed = insertLeadSchema.safeParse(leadData);
+          if (!parsed.success) {
+            errors.push({ row: i + 2, error: fromZodError(parsed.error).toString() });
+            continue;
+          }
+
+          const lead = await storage.createLead(parsed.data);
+          imported.push(lead);
+        } catch (error: any) {
+          errors.push({ row: i + 2, error: error.message });
+        }
+      }
+
+      res.json({
+        success: true,
+        imported: imported.length,
+        errors: errors.length,
+        details: errors.length > 0 ? errors : undefined
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -483,6 +571,12 @@ The message should be professional, concise, and include a clear call-to-action.
         workflowId: workflow.id,
         leadId,
         status: "pending",
+      });
+
+      // Execute workflow asynchronously
+      const { workflowExecutor } = await import("./services/workflow-executor.service");
+      workflowExecutor.executeWorkflow(execution.id).catch((error) => {
+        console.error("Workflow execution failed:", error);
       });
 
       res.json(execution);
