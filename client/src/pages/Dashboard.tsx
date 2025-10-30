@@ -34,6 +34,17 @@ export default function Dashboard() {
 
   const activeWorkflows = workflows.filter((w) => w.status === "active").slice(0, 3);
 
+  // Sample engagement data - will be replaced with real data from API
+  const engagementData = [
+    { date: "Day 1", sent: 120, opened: 80, clicked: 45, replied: 20 },
+    { date: "Day 2", sent: 140, opened: 95, clicked: 52, replied: 25 },
+    { date: "Day 3", sent: 130, opened: 88, clicked: 48, replied: 22 },
+    { date: "Day 4", sent: 150, opened: 102, clicked: 58, replied: 28 },
+    { date: "Day 5", sent: 160, opened: 110, clicked: 65, replied: 32 },
+    { date: "Day 6", sent: 145, opened: 98, clicked: 55, replied: 26 },
+    { date: "Day 7", sent: 155, opened: 105, clicked: 60, replied: 30 },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -80,7 +91,7 @@ export default function Dashboard() {
         />
       </div>
 
-      <EngagementChart />
+      <EngagementChart data={engagementData} />
 
       <div>
         <div className="flex items-center justify-between mb-4">
