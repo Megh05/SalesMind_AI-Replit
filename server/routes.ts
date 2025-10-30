@@ -112,6 +112,175 @@ export function registerRoutes(app: Express): Server {
   });
 
   // ============================================
+  // OAUTH ROUTES
+  // ============================================
+
+  app.get("/api/oauth/google/connect", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { oauthService } = await import("./services/oauth.service");
+      
+      const state = crypto.randomBytes(32).toString("hex");
+      const authUrl = await oauthService.getGoogleAuthUrl(state, userId);
+      
+      res.json({ authUrl });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/oauth/google/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state" });
+      }
+
+      const { oauthService } = await import("./services/oauth.service");
+      
+      // Get userId from validated state (state validation happens inside exchangeGoogleCode)
+      // We need to extract userId from Redis before validation
+      const redis = (await import("ioredis")).default;
+      const redisClient = new redis(process.env.REDIS_URL || "redis://localhost:6379", {
+        maxRetriesPerRequest: null,
+      });
+      
+      const stateKey = `oauth_state:${state}`;
+      const stateData = await redisClient.get(stateKey);
+      
+      if (!stateData) {
+        return res.redirect("/settings?oauth=error&provider=google&message=" + encodeURIComponent("Invalid or expired state"));
+      }
+      
+      const { userId } = JSON.parse(stateData);
+      
+      // Validate state and get tokens (validates userId matches and deletes state)
+      const tokens = await oauthService.exchangeGoogleCode(code as string, userId, state as string);
+
+      // Store credentials in database
+      const expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
+      await storage.upsertOAuthCredential({
+        userId,
+        provider: "google",
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        tokenType: "Bearer",
+        expiresAt,
+        scope: "gmail calendar",
+        email: tokens.email,
+        isActive: true,
+      });
+
+      // Redirect back to settings page
+      res.redirect("/settings?oauth=success&provider=google");
+    } catch (error: any) {
+      console.error("Google OAuth callback error:", error);
+      res.redirect("/settings?oauth=error&provider=google&message=" + encodeURIComponent(error.message));
+    }
+  });
+
+  app.get("/api/oauth/linkedin/connect", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { oauthService } = await import("./services/oauth.service");
+      
+      const state = crypto.randomBytes(32).toString("hex");
+      const authUrl = await oauthService.getLinkedInAuthUrl(state, userId);
+      
+      res.json({ authUrl });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/oauth/linkedin/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state" });
+      }
+
+      const { oauthService } = await import("./services/oauth.service");
+      
+      // Get userId from validated state (state validation happens inside exchangeLinkedInCode)
+      // We need to extract userId from Redis before validation
+      const redis = (await import("ioredis")).default;
+      const redisClient = new redis(process.env.REDIS_URL || "redis://localhost:6379", {
+        maxRetriesPerRequest: null,
+      });
+      
+      const stateKey = `oauth_state:${state}`;
+      const stateData = await redisClient.get(stateKey);
+      
+      if (!stateData) {
+        return res.redirect("/settings?oauth=error&provider=linkedin&message=" + encodeURIComponent("Invalid or expired state"));
+      }
+      
+      const { userId } = JSON.parse(stateData);
+      
+      // Validate state and get tokens (validates userId matches and deletes state)
+      const tokens = await oauthService.exchangeLinkedInCode(code as string, userId, state as string);
+
+      // Store credentials in database
+      const expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
+      await storage.upsertOAuthCredential({
+        userId,
+        provider: "linkedin",
+        accessToken: tokens.accessToken,
+        tokenType: "Bearer",
+        expiresAt,
+        scope: "w_member_social",
+        email: tokens.email,
+        isActive: true,
+      });
+
+      // Redirect back to settings page
+      res.redirect("/settings?oauth=success&provider=linkedin");
+    } catch (error: any) {
+      console.error("LinkedIn OAuth callback error:", error);
+      res.redirect("/settings?oauth=error&provider=linkedin&message=" + encodeURIComponent(error.message));
+    }
+  });
+
+  app.get("/api/oauth/connections", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const userId = (req as any).userId;
+      const credentials = await storage.getOAuthCredentials(userId);
+      
+      // Don't send access tokens to client, just connection status
+      const connections = credentials.map(cred => ({
+        provider: cred.provider,
+        email: cred.email,
+        isActive: cred.isActive,
+        connectedAt: cred.createdAt,
+      }));
+
+      res.json(connections);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/oauth/:provider/disconnect", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { provider } = req.params;
+
+      const success = await storage.deleteOAuthCredential(userId, provider);
+      
+      if (!success) {
+        return res.status(404).json({ error: "Connection not found" });
+      }
+
+      res.json({ success: true, message: `${provider} disconnected` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
   // LEAD ROUTES
   // ============================================
 

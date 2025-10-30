@@ -17,6 +17,8 @@ import type {
   InsertMessage,
   IntegrationSetting,
   InsertIntegrationSetting,
+  OAuthCredential,
+  InsertOAuthCredential,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -79,6 +81,13 @@ export interface IStorage {
   getIntegrationSettingByProvider(provider: string): Promise<IntegrationSetting | undefined>;
   upsertIntegrationSetting(setting: InsertIntegrationSetting): Promise<IntegrationSetting>;
   deleteIntegrationSetting(provider: string): Promise<boolean>;
+
+  // OAuth credentials operations
+  getOAuthCredentials(userId: string): Promise<OAuthCredential[]>;
+  getOAuthCredentialByProvider(userId: string, provider: string): Promise<OAuthCredential | undefined>;
+  upsertOAuthCredential(credential: InsertOAuthCredential): Promise<OAuthCredential>;
+  deleteOAuthCredential(userId: string, provider: string): Promise<boolean>;
+  refreshOAuthToken(userId: string, provider: string, newAccessToken: string, newRefreshToken: string | null, expiresAt: Date): Promise<OAuthCredential | undefined>;
 
   // Analytics operations
   getLeadStats(): Promise<{
@@ -409,6 +418,89 @@ Generate messages that would resonate with prospects in the ${persona.industry} 
       .delete(schema.integrationSettings)
       .where(eq(schema.integrationSettings.provider, provider));
     return result.rowCount > 0;
+  }
+
+  // OAuth credentials operations
+  async getOAuthCredentials(userId: string): Promise<OAuthCredential[]> {
+    return db
+      .select()
+      .from(schema.oauthCredentials)
+      .where(eq(schema.oauthCredentials.userId, userId));
+  }
+
+  async getOAuthCredentialByProvider(userId: string, provider: string): Promise<OAuthCredential | undefined> {
+    const result = await db
+      .select()
+      .from(schema.oauthCredentials)
+      .where(
+        and(
+          eq(schema.oauthCredentials.userId, userId),
+          eq(schema.oauthCredentials.provider, provider)
+        )
+      );
+    return result[0];
+  }
+
+  async upsertOAuthCredential(credential: InsertOAuthCredential): Promise<OAuthCredential> {
+    const existing = await this.getOAuthCredentialByProvider(credential.userId, credential.provider);
+    if (existing) {
+      const result = await db
+        .update(schema.oauthCredentials)
+        .set({ ...credential, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.oauthCredentials.userId, credential.userId),
+            eq(schema.oauthCredentials.provider, credential.provider)
+          )
+        )
+        .returning();
+      return result[0];
+    } else {
+      const result = await db.insert(schema.oauthCredentials).values(credential).returning();
+      return result[0];
+    }
+  }
+
+  async deleteOAuthCredential(userId: string, provider: string): Promise<boolean> {
+    const result = await db
+      .delete(schema.oauthCredentials)
+      .where(
+        and(
+          eq(schema.oauthCredentials.userId, userId),
+          eq(schema.oauthCredentials.provider, provider)
+        )
+      );
+    return result.rowCount > 0;
+  }
+
+  async refreshOAuthToken(
+    userId: string,
+    provider: string,
+    newAccessToken: string,
+    newRefreshToken: string | null,
+    expiresAt: Date
+  ): Promise<OAuthCredential | undefined> {
+    const updateData: any = {
+      accessToken: newAccessToken,
+      expiresAt,
+      updatedAt: new Date(),
+    };
+    
+    if (newRefreshToken) {
+      updateData.refreshToken = newRefreshToken;
+    }
+
+    const result = await db
+      .update(schema.oauthCredentials)
+      .set(updateData)
+      .where(
+        and(
+          eq(schema.oauthCredentials.userId, userId),
+          eq(schema.oauthCredentials.provider, provider)
+        )
+      )
+      .returning();
+    return result[0];
   }
 
   // Analytics operations

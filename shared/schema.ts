@@ -211,3 +211,29 @@ export const insertIntegrationSettingSchema = createInsertSchema(integrationSett
 
 export type InsertIntegrationSetting = z.infer<typeof insertIntegrationSettingSchema>;
 export type IntegrationSetting = typeof integrationSettings.$inferSelect;
+
+// OAuth credentials table - stores user OAuth tokens for Gmail, Calendar, LinkedIn, etc.
+export const oauthCredentials = pgTable("oauth_credentials", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  provider: text("provider").notNull(), // 'google', 'linkedin', etc.
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  tokenType: text("token_type").notNull().default("Bearer"),
+  expiresAt: timestamp("expires_at"),
+  scope: text("scope"),
+  email: text("email"), // The email/account connected
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertOAuthCredentialSchema = createInsertSchema(oauthCredentials).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertOAuthCredential = z.infer<typeof insertOAuthCredentialSchema>;
+export type OAuthCredential = typeof oauthCredentials.$inferSelect;

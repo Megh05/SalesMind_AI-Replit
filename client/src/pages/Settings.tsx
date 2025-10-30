@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,8 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Mail, Calendar, Linkedin, CheckCircle2, XCircle } from "lucide-react";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -18,6 +19,89 @@ export default function Settings() {
   const [twilioToken, setTwilioToken] = useState("");
   const [twilioFromNumber, setTwilioFromNumber] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
+
+  // Fetch OAuth connections
+  const { data: oauthConnections, refetch: refetchConnections } = useQuery({
+    queryKey: ["/api/oauth/connections"],
+    queryFn: () => apiRequest("/api/oauth/connections", "GET"),
+  });
+
+  // Check for OAuth callback success/error
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get('oauth');
+    const provider = params.get('provider');
+    const message = params.get('message');
+
+    if (oauth === 'success' && provider) {
+      toast({
+        title: "Success",
+        description: `${provider.charAt(0).toUpperCase() + provider.slice(1)} connected successfully!`,
+      });
+      refetchConnections();
+      // Clean up URL
+      window.history.replaceState({}, '', '/settings');
+    } else if (oauth === 'error' && provider) {
+      toast({
+        title: "Error",
+        description: message || `Failed to connect ${provider}`,
+        variant: "destructive",
+      });
+      // Clean up URL
+      window.history.replaceState({}, '', '/settings');
+    }
+  }, [toast, refetchConnections]);
+
+  const connectOAuthMutation = useMutation({
+    mutationFn: async (provider: string) => {
+      const response = await apiRequest(`/api/oauth/${provider}/connect`, "GET");
+      return response as any;
+    },
+    onSuccess: (data: any) => {
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to initiate OAuth connection",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const disconnectOAuthMutation = useMutation({
+    mutationFn: async (provider: string) => {
+      const response = await apiRequest(`/api/oauth/${provider}/disconnect`, "DELETE");
+      return response as any;
+    },
+    onSuccess: (_: any, provider: string) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/oauth/connections"] });
+      toast({
+        title: "Success",
+        description: `${provider.charAt(0).toUpperCase() + provider.slice(1)} disconnected successfully`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to disconnect account",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const isConnected = (provider: string) => {
+    const connections = oauthConnections as any;
+    return connections?.some?.((conn: any) => conn.provider === provider && conn.isActive);
+  };
+
+  const getConnectionEmail = (provider: string) => {
+    const connections = oauthConnections as any;
+    const conn = connections?.find?.((c: any) => c.provider === provider);
+    return conn?.email;
+  };
 
   const saveIntegrationMutation = useMutation({
     mutationFn: ({ provider, config }: { provider: string; config: any }) =>
@@ -137,9 +221,101 @@ export default function Settings() {
         <TabsContent value="integrations" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Email Provider</CardTitle>
+              <CardTitle>Connected Accounts (OAuth)</CardTitle>
               <CardDescription>
-                Configure your email sending service (SendGrid recommended)
+                Connect your Gmail, Google Calendar, and LinkedIn accounts to send from your own accounts
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Mail className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <div className="font-medium">Gmail & Google Calendar</div>
+                      <div className="text-sm text-muted-foreground">
+                        {isConnected("google") ? (
+                          <div className="flex items-center gap-1 text-green-600">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Connected as {getConnectionEmail("google")}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <XCircle className="h-4 w-4" />
+                            Not connected
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {isConnected("google") ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => disconnectOAuthMutation.mutate("google")}
+                      disabled={disconnectOAuthMutation.isPending}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => connectOAuthMutation.mutate("google")}
+                      disabled={connectOAuthMutation.isPending}
+                    >
+                      Connect
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                      <Linkedin className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <div className="font-medium">LinkedIn</div>
+                      <div className="text-sm text-muted-foreground">
+                        {isConnected("linkedin") ? (
+                          <div className="flex items-center gap-1 text-green-600">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Connected as {getConnectionEmail("linkedin")}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <XCircle className="h-4 w-4" />
+                            Not connected
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {isConnected("linkedin") ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => disconnectOAuthMutation.mutate("linkedin")}
+                      disabled={disconnectOAuthMutation.isPending}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => connectOAuthMutation.mutate("linkedin")}
+                      disabled={connectOAuthMutation.isPending}
+                    >
+                      Connect
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Email Provider (Fallback)</CardTitle>
+              <CardDescription>
+                Configure SendGrid as a fallback email service when Gmail is not connected
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
