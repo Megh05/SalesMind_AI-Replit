@@ -1,6 +1,5 @@
 import { storage } from "../storage";
-import { emailService } from "./email.service";
-import { smsService } from "./sms.service";
+import { channelAdapter } from "./channel-adapter.service";
 import type { WorkflowNode, WorkflowEdge, Lead, Persona } from "@shared/schema";
 
 export interface WorkflowExecutionContext {
@@ -19,6 +18,12 @@ export class WorkflowExecutorService {
       const execution = await storage.getWorkflowExecutionById(executionId);
       if (!execution) {
         throw new Error("Execution not found");
+      }
+
+      // Check if execution is paused
+      if (execution.status === "paused") {
+        console.log(`Workflow execution ${executionId} is paused, skipping`);
+        throw new Error("Workflow is paused");
       }
 
       const workflow = await storage.getWorkflowById(execution.workflowId);
@@ -240,7 +245,7 @@ The message should be professional, concise, and include a clear call-to-action.
     const subject = context.variables.aiGeneratedSubject || node.config?.subject || "Message from OmniReach";
     const content = context.variables.aiGeneratedMessage || node.config?.content || "Hello!";
 
-    const result = await emailService.sendEmail({
+    const result = await channelAdapter.send("email", {
       to: context.lead.email,
       subject,
       content,
@@ -250,18 +255,19 @@ The message should be professional, concise, and include a clear call-to-action.
       throw new Error(`Failed to send email: ${result.error}`);
     }
 
-    // Record message in database
+    // Record message in database with tracking metadata
     await storage.createMessage({
       executionId: context.executionId,
       leadId: context.leadId,
       personaId: context.personaId,
-      channel: "email",
+      channel: result.channel,
       content,
       status: "sent",
+      metadata: result.messageId ? { sendgridMessageId: result.messageId } as any : undefined,
       sentAt: new Date(),
     });
 
-    console.log(`Email sent to ${context.lead.email}`);
+    console.log(`Email sent to ${context.lead.email} via ${result.channel}`);
   }
 
   private async executeSMSNode(node: WorkflowNode, context: WorkflowExecutionContext): Promise<void> {
@@ -271,7 +277,7 @@ The message should be professional, concise, and include a clear call-to-action.
 
     const content = context.variables.aiGeneratedMessage || node.config?.content || "Hello!";
 
-    const result = await smsService.sendSMS({
+    const result = await channelAdapter.send("sms", {
       to: context.lead.phone,
       content,
     });
@@ -280,18 +286,19 @@ The message should be professional, concise, and include a clear call-to-action.
       throw new Error(`Failed to send SMS: ${result.error}`);
     }
 
-    // Record message in database
+    // Record message in database with tracking metadata
     await storage.createMessage({
       executionId: context.executionId,
       leadId: context.leadId,
       personaId: context.personaId,
-      channel: "sms",
+      channel: result.channel,
       content,
       status: "sent",
+      metadata: result.messageId ? { twilioMessageSid: result.messageId } as any : undefined,
       sentAt: new Date(),
     });
 
-    console.log(`SMS sent to ${context.lead.phone}`);
+    console.log(`SMS sent to ${context.lead.phone} via ${result.channel}`);
   }
 
   private async executeWaitNode(node: WorkflowNode, context: WorkflowExecutionContext): Promise<void> {

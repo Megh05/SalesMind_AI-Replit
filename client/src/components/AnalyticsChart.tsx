@@ -14,26 +14,32 @@ import {
   Cell,
 } from "recharts";
 
-const engagementData = [
-  { date: "Jan 20", emails: 45, replies: 12 },
-  { date: "Jan 22", emails: 52, replies: 15 },
-  { date: "Jan 24", emails: 48, replies: 18 },
-  { date: "Jan 26", emails: 61, replies: 22 },
-  { date: "Jan 28", emails: 55, replies: 19 },
-  { date: "Jan 30", emails: 67, replies: 28 },
-  { date: "Feb 1", emails: 73, replies: 31 },
-];
-
-const channelData = [
-  { name: "Email", value: 245 },
-  { name: "SMS", value: 123 },
-  { name: "LinkedIn", value: 89 },
-  { name: "Calendar", value: 67 },
-];
-
 const COLORS = ["hsl(221, 83%, 53%)", "hsl(262, 83%, 58%)", "hsl(291, 64%, 42%)", "hsl(199, 89%, 48%)"];
 
-export function EngagementChart() {
+interface EngagementData {
+  date: string;
+  sent: number;
+  opened: number;
+  clicked: number;
+  replied: number;
+}
+
+interface ChannelData {
+  name: string;
+  value: number;
+}
+
+interface ChannelPerformanceData {
+  channel: string;
+  count: number;
+  openRate: number;
+}
+
+export function EngagementChart({ data }: { data: EngagementData[] }) {
+  const displayData = data.length > 0 ? data : [
+    { date: "No data", sent: 0, opened: 0, clicked: 0, replied: 0 }
+  ];
+
   return (
     <Card>
       <CardHeader>
@@ -41,7 +47,7 @@ export function EngagementChart() {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={engagementData}>
+          <LineChart data={displayData}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
             <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
@@ -54,17 +60,24 @@ export function EngagementChart() {
             />
             <Line
               type="monotone"
-              dataKey="emails"
+              dataKey="sent"
               stroke="hsl(var(--primary))"
               strokeWidth={2}
               dot={{ fill: "hsl(var(--primary))" }}
             />
             <Line
               type="monotone"
-              dataKey="replies"
+              dataKey="opened"
               stroke="hsl(var(--chart-2))"
               strokeWidth={2}
               dot={{ fill: "hsl(var(--chart-2))" }}
+            />
+            <Line
+              type="monotone"
+              dataKey="replied"
+              stroke="hsl(var(--chart-3))"
+              strokeWidth={2}
+              dot={{ fill: "hsl(var(--chart-3))" }}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -73,7 +86,11 @@ export function EngagementChart() {
   );
 }
 
-export function ChannelDistributionChart() {
+export function ChannelDistributionChart({ data }: { data: ChannelData[] }) {
+  const displayData = data.length > 0 ? data : [
+    { name: "No data", value: 1 }
+  ];
+
   return (
     <Card>
       <CardHeader>
@@ -83,7 +100,7 @@ export function ChannelDistributionChart() {
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
             <Pie
-              data={channelData}
+              data={displayData}
               cx="50%"
               cy="50%"
               labelLine={false}
@@ -92,7 +109,7 @@ export function ChannelDistributionChart() {
               fill="#8884d8"
               dataKey="value"
             >
-              {channelData.map((entry, index) => (
+              {displayData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
@@ -110,7 +127,11 @@ export function ChannelDistributionChart() {
   );
 }
 
-export function ChannelPerformanceChart() {
+export function ChannelPerformanceChart({ data }: { data: ChannelPerformanceData[] }) {
+  const displayData = data.length > 0 ? data : [
+    { channel: "No data", count: 0, openRate: 0 }
+  ];
+
   return (
     <Card>
       <CardHeader>
@@ -118,9 +139,9 @@ export function ChannelPerformanceChart() {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={channelData}>
+          <BarChart data={displayData}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+            <XAxis dataKey="channel" stroke="hsl(var(--muted-foreground))" fontSize={12} />
             <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
             <Tooltip
               contentStyle={{
@@ -129,7 +150,7 @@ export function ChannelPerformanceChart() {
                 borderRadius: "6px",
               }}
             />
-            <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>

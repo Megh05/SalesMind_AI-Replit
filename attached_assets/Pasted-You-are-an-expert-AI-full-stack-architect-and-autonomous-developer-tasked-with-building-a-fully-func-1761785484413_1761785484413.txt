@@ -1,0 +1,141 @@
+You are an expert AI full-stack architect and autonomous developer tasked with building a fully functional AI-powered sales automation platform called OmniReach — a customizable, workflow-driven, multi-channel sales engagement system.
+The application must be:
+Open-source friendly, low-cost (use open-source tools wherever possible)
+Cloud-agnostic, deployable via Docker and compatible with local or cloud environments
+Visually stunning, with an intuitive UI/UX suitable for non-technical business users
+Extensible, supporting plugins, custom workflows, and integrations
+Secure, compliant with GDPR, CAN-SPAM, and other data laws
+AI-integrated, using OpenRouter or Mistral API for all LLM tasks (generation, analysis, and personalization)
+You will build the application progressively, following the phased roadmap below, ensuring each phase is functional and tested before moving to the next.
+⚙️ DEVELOPMENT ENVIRONMENT REQUIREMENTS:
+Frontend: Next.js + Tailwind CSS + TypeScript + React Flow + Zustand
+Backend: FastAPI (Python) or Node.js (Express) — developer’s choice
+Database: PostgreSQL (primary) + Redis (cache)
+Message Queue / Worker: Celery or BullMQ
+Vector Store: Chroma or PGVector
+Authentication: JWT-based with optional Keycloak integration
+Deployment: Docker Compose for dev, Kubernetes-ready for prod
+LLM Integration: OpenRouter or Mistral API
+Logging/Monitoring: Prometheus + Grafana + Loki (optional)
+CI/CD: GitHub Actions
+🌐 HIGH-LEVEL GOAL
+Build a self-learning, customizable sales engagement platform that automates outreach, follow-ups, and relationship management through AI-generated, multi-channel, personalized workflows.
+The system should:
+Automate the full sales cycle (lead → outreach → follow-up → meeting → negotiation → deal).
+Support custom workflows with drag-and-drop builders.
+Include AI personas, relationship intelligence, RAG-enhanced communication, and multi-channel outreach.
+Feature a marketplace for workflow templates, personas, and plugins.
+Provide a beautiful, intuitive UI that makes complex automation feel simple.
+🧩 BUILD PLAN: PHASE-BY-PHASE EXECUTION
+Phase 0 — Foundations (Setup & Baseline)
+Goal: Set up the full stack, boilerplate, and CI/CD.
+Tasks:
+Initialize monorepo (frontend + backend + infra).
+Add Docker, docker-compose, .env, and seed data.
+Setup linting, formatting, and test frameworks.
+Implement base auth (JWT), roles (Admin, Sales, Viewer).
+Add simple health check and logging.
+Deliverable:
+A running local app (docker-compose up) with a login screen, dashboard shell, and seed data.
+Phase 1 — Core MVP Workflow (Email Pipeline)
+Goal: Build a minimal working sales workflow that sends AI-personalized emails.
+Features:
+Lead CRUD, CSV import/export
+Persona creation (name, tone, industry focus)
+Workflow builder (React Flow)
+AI integration: generate message based on persona + lead context
+Email sender (SMTP or SendGrid) + webhook tracking (opens/replies)
+Basic analytics dashboard
+Deliverable:
+End-to-end demo: create lead → run workflow → send email → track open/reply.
+Phase 2 — Durable Workflow Engine & Async Execution
+Goal: Turn workflows into durable, stateful executions.
+Features:
+WorkflowRun + NodeRun models with retry logic
+Celery or BullMQ worker for async task execution
+Node types: AI Generate, Send Email, Wait, Decision
+Workflow logs, retries, pause/resume
+Deliverable:
+Workflow can pause, resume, and recover after server restart.
+Phase 3 — Multi-channel Adapters (LinkedIn, SMS, Calendar)
+Goal: Add multiple outreach channels with fallback logic.
+Features:
+Adapters for Email, SMS (Twilio), LinkedIn (API/automation-safe), and Calendly
+Unified send_message() interface
+Channel fallback and webhook updates
+Channel-specific analytics
+Deliverable:
+Workflow can automatically use next available channel (e.g., no reply via email → LinkedIn DM).
+Phase 4 — Relationship Graph & RAG Intelligence
+Goal: Add contextual intelligence and memory.
+Features:
+Relationship graph (Postgres graph or Neo4j)
+Sentiment tracking on replies
+Vector store (Chroma/PGVector) for past messages + documents
+RAG-enhanced AI messages (retrieve context before generation)
+Deliverable:
+Messages reference past interactions and relationship score updates dynamically.
+Phase 5 — Persona Studio & Policy Engine
+Goal: Deep customization of tone, compliance, and style.
+Features:
+Persona Studio UI: tone sliders, upload samples
+Policy engine: define constraints (no discount > X%, no SMS without consent)
+Pre-send simulation sandbox
+Deliverable:
+Messages reflect persona voice and adhere to company policies.
+Phase 6 — Autonomous Negotiation Agent
+Goal: Safe AI-driven negotiation.
+Features:
+Rule-based negotiation agent (min/max price, allowed clauses)
+Transaction templates (contracts, offers)
+Explainability UI (why agent made each decision)
+Deliverable:
+Agent can autonomously propose deals within defined limits.
+Phase 7 — Marketplace & Plugin Ecosystem
+Goal: Enable extensibility and community-driven growth.
+Features:
+Workflow/Persona “block” packaging system (JSON + metadata)
+Marketplace UI to browse, install, and rate blocks
+SDK + CLI for developers to publish new blocks
+Deliverable:
+Users can import/export workflows and share persona templates.
+Phase 8 — Enterprise & Security Enhancements
+Goal: Prepare for enterprise customers.
+Features:
+SSO via Keycloak
+Audit logs, encryption at rest/in transit
+Role-based permissions, tenant isolation
+SOC2 compliance roadmap
+Deliverable:
+Enterprise-ready build with fine-grained access controls.
+Phase 9 — Observability, Cost Optimization, & Scaling
+Goal: Make the app efficient and production-grade.
+Features:
+Cost tracking for LLM calls
+Caching & deduplication of AI generations
+Monitoring dashboards, alerts, error budgets
+Deliverable:
+Stable, low-cost production version with full observability.
+Phase 10 — Growth & Monetization
+Goal: Expand product potential and revenue channels.
+Features:
+Voice outreach (TTS + consent-based calling)
+Retargeting ad integrations
+White-label SaaS mode
+Usage-based or performance-based pricing
+Deliverable:
+Fully commercial-ready platform.
+📦 GENERAL REQUIREMENTS
+Write modular, well-documented, testable code.
+Use reusable components for workflows, personas, and analytics.
+Follow clean architecture and separation of concerns.
+Every API must be documented in OpenAPI (Swagger).
+UI must be built with clean, modern visual hierarchy (spacing, shadows, gradients, animations).
+Generate unit and integration tests at each phase.
+Generate sample data for demo purposes (fake leads, personas, workflows).
+✅ FINAL DELIVERABLES
+After completing all phases:
+A fully functional AI sales automation platform ready for public release.
+Complete documentation: architecture, API reference, deployment guide, and SDK usage.
+Demo workflows and sample personas to showcase platform capabilities.
+Marketplace-ready extensible version.

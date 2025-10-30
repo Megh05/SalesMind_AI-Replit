@@ -1,4 +1,6 @@
 import type {
+  User,
+  InsertUser,
   Lead,
   InsertLead,
   Persona,
@@ -18,6 +20,14 @@ import type {
 } from "@shared/schema";
 
 export interface IStorage {
+  // User operations
+  getUsers(): Promise<User[]>;
+  getUserById(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
+
   // Lead operations
   getLeads(): Promise<Lead[]>;
   getLeadById(id: string): Promise<Lead | undefined>;
@@ -102,6 +112,40 @@ const client = neon(databaseUrl);
 const db = drizzle(client, { schema });
 
 export class DbStorage implements IStorage {
+  // User operations
+  async getUsers(): Promise<User[]> {
+    return db.select().from(schema.users).orderBy(schema.users.createdAt);
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    const result = await db.select().from(schema.users).where(eq(schema.users.id, id));
+    return result[0];
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await db.select().from(schema.users).where(eq(schema.users.email, email));
+    return result[0];
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const result = await db.insert(schema.users).values(user).returning();
+    return result[0];
+  }
+
+  async updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined> {
+    const result = await db
+      .update(schema.users)
+      .set({ ...user, updatedAt: new Date() })
+      .where(eq(schema.users.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const result = await db.delete(schema.users).where(eq(schema.users.id, id));
+    return result.rowCount > 0;
+  }
+
   // Lead operations
   async getLeads(): Promise<Lead[]> {
     return db.select().from(schema.leads).orderBy(schema.leads.createdAt);

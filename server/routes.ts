@@ -8,13 +8,108 @@ import {
   insertWorkflowNodeSchema,
   insertWorkflowEdgeSchema,
   insertIntegrationSettingSchema,
+  registerUserSchema,
+  loginUserSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import Papa from "papaparse";
+import bcrypt from "bcryptjs";
+import { generateToken, authenticate, type AuthRequest } from "./middleware/auth";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
+
+  // ============================================
+  // AUTHENTICATION ROUTES
+  // ============================================
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const parsed = registerUserSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      }
+
+      const existingUser = await storage.getUserByEmail(parsed.data.email);
+      if (existingUser) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+
+      const hashedPassword = await bcrypt.hash(parsed.data.password, 10);
+      const user = await storage.createUser({
+        ...parsed.data,
+        password: hashedPassword,
+      });
+
+      const { password, ...userWithoutPassword } = user;
+      const token = generateToken(user.id);
+
+      res.status(201).json({ user: userWithoutPassword, token });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const parsed = loginUserSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromZodError(parsed.error).toString() });
+      }
+
+      const user = await storage.getUserByEmail(parsed.data.email);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const isValidPassword = await bcrypt.compare(parsed.data.password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      if (!user.isActive) {
+        return res.status(403).json({ error: "Account is inactive" });
+      }
+
+      const { password, ...userWithoutPassword } = user;
+      const token = generateToken(user.id);
+
+      res.json({ user: userWithoutPassword, token });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/auth/me", authenticate, async (req: AuthRequest, res) => {
+    try {
+      const userId = (req as any).userId;
+      const user = await storage.getUserById(userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/logout", authenticate, async (req, res) => {
+    res.json({ message: "Logged out successfully" });
+  });
+
+  // Health check endpoint
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      timestamp: new Date().toISOString(),
+      version: "1.0.0"
+    });
+  });
+
   // ============================================
   // LEAD ROUTES
   // ============================================
@@ -573,13 +668,43 @@ The message should be professional, concise, and include a clear call-to-action.
         status: "pending",
       });
 
-      // Execute workflow asynchronously
-      const { workflowExecutor } = await import("./services/workflow-executor.service");
-      workflowExecutor.executeWorkflow(execution.id).catch((error) => {
-        console.error("Workflow execution failed:", error);
-      });
+      // Enqueue workflow execution with BullMQ
+      const { enqueueWorkflowExecution } = await import("./services/queue.service");
+      await enqueueWorkflowExecution(execution.id, workflow.id, leadId);
 
       res.json(execution);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/workflows/executions/:id/pause", async (req, res) => {
+    try {
+      const { pauseWorkflowExecution } = await import("./services/queue.service");
+      const success = await pauseWorkflowExecution(req.params.id);
+      
+      if (success) {
+        await storage.updateWorkflowExecution(req.params.id, { status: "paused" });
+        res.json({ success: true, message: "Workflow paused" });
+      } else {
+        res.status(404).json({ error: "Workflow execution not found" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/workflows/executions/:id/resume", async (req, res) => {
+    try {
+      const { resumeWorkflowExecution } = await import("./services/queue.service");
+      const success = await resumeWorkflowExecution(req.params.id);
+      
+      if (success) {
+        await storage.updateWorkflowExecution(req.params.id, { status: "running" });
+        res.json({ success: true, message: "Workflow resumed" });
+      } else {
+        res.status(404).json({ error: "Workflow execution not found" });
+      }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -589,6 +714,21 @@ The message should be professional, concise, and include a clear call-to-action.
     try {
       const executions = await storage.getWorkflowExecutions(req.params.id);
       res.json(executions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/workflows/executions/:id/status", async (req, res) => {
+    try {
+      const { getWorkflowJobStatus } = await import("./services/queue.service");
+      const status = await getWorkflowJobStatus(req.params.id);
+      
+      if (status) {
+        res.json(status);
+      } else {
+        res.status(404).json({ error: "Job not found" });
+      }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -604,6 +744,181 @@ The message should be professional, concise, and include a clear call-to-action.
       const messages = await storage.getMessages(leadId as string | undefined);
       res.json(messages);
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
+  // WEBHOOK ROUTES (Email Tracking)
+  // ============================================
+
+  app.post("/api/webhooks/sendgrid", async (req, res) => {
+    try {
+      const events = req.body;
+      
+      if (!Array.isArray(events)) {
+        return res.status(400).json({ error: "Invalid webhook payload" });
+      }
+
+      for (const event of events) {
+        const { event: eventType, sg_message_id, email } = event;
+        
+        if (!sg_message_id) continue;
+
+        const messages = await storage.getMessages();
+        const message = messages.find(m => {
+          const metadata = (m as any).metadata;
+          return metadata?.sendgridMessageId === sg_message_id;
+        });
+
+        if (!message) continue;
+
+        const updates: any = {};
+
+        switch (eventType) {
+          case "delivered":
+            updates.deliveredAt = new Date(event.timestamp * 1000);
+            updates.status = "delivered";
+            break;
+          case "open":
+            if (!message.openedAt) {
+              updates.openedAt = new Date(event.timestamp * 1000);
+            }
+            break;
+          case "click":
+            if (!message.clickedAt) {
+              updates.clickedAt = new Date(event.timestamp * 1000);
+            }
+            break;
+          case "bounce":
+          case "dropped":
+            updates.status = "failed";
+            break;
+          case "spamreport":
+            updates.status = "spam";
+            break;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await storage.updateMessage(message.id, updates);
+        }
+      }
+
+      res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error("Webhook processing error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/webhooks/twilio", async (req, res) => {
+    try {
+      const { MessageSid, MessageStatus, From, To } = req.body;
+
+      if (!MessageSid) {
+        return res.status(400).json({ error: "Invalid webhook payload" });
+      }
+
+      const messages = await storage.getMessages();
+      const message = messages.find(m => {
+        const metadata = (m as any).metadata;
+        return metadata?.twilioMessageSid === MessageSid;
+      });
+
+      if (!message) {
+        return res.status(200).json({ success: true });
+      }
+
+      const updates: any = {};
+
+      switch (MessageStatus) {
+        case "delivered":
+          updates.deliveredAt = new Date();
+          updates.status = "delivered";
+          break;
+        case "failed":
+        case "undelivered":
+          updates.status = "failed";
+          break;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await storage.updateMessage(message.id, updates);
+      }
+
+      res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error("Twilio webhook error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
+  // ANALYTICS ROUTES
+  // ============================================
+
+  app.get("/api/analytics/dashboard", async (req, res) => {
+    try {
+      const [leadStats, workflowStats, messageStats] = await Promise.all([
+        storage.getLeadStats(),
+        storage.getWorkflowStats(),
+        storage.getMessageStats(),
+      ]);
+
+      const messages = await storage.getMessages();
+      
+      const last30Days = new Date();
+      last30Days.setDate(last30Days.getDate() - 30);
+
+      const recentMessages = messages.filter(
+        m => new Date(m.createdAt) >= last30Days
+      );
+
+      const engagementByDay = recentMessages.reduce((acc, msg) => {
+        const date = new Date(msg.createdAt).toISOString().split('T')[0];
+        if (!acc[date]) {
+          acc[date] = { sent: 0, opened: 0, clicked: 0, replied: 0 };
+        }
+        acc[date].sent++;
+        if (msg.openedAt) acc[date].opened++;
+        if (msg.clickedAt) acc[date].clicked++;
+        if (msg.repliedAt) acc[date].replied++;
+        return acc;
+      }, {} as Record<string, any>);
+
+      const engagementData = Object.entries(engagementByDay)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-7)
+        .map(([date, stats]) => ({
+          date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          ...stats,
+        }));
+
+      const channelDistribution = messages.reduce((acc, msg) => {
+        acc[msg.channel] = (acc[msg.channel] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const channelPerformance = Object.entries(channelDistribution).map(([channel, count]) => {
+        const channelMessages = messages.filter(m => m.channel === channel);
+        const opens = channelMessages.filter(m => m.openedAt).length;
+        const openRate = count > 0 ? Math.round((opens / count) * 100) : 0;
+        return { channel, count, openRate };
+      });
+
+      res.json({
+        leadStats,
+        workflowStats,
+        messageStats,
+        engagementData,
+        channelDistribution: Object.entries(channelDistribution).map(([name, value]) => ({
+          name: name.charAt(0).toUpperCase() + name.slice(1),
+          value,
+        })),
+        channelPerformance,
+      });
+    } catch (error: any) {
+      console.error("Analytics error:", error);
       res.status(500).json({ error: error.message });
     }
   });

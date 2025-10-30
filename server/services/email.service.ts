@@ -55,6 +55,15 @@ export class EmailService {
               value: message.content,
             },
           ],
+          tracking_settings: {
+            click_tracking: {
+              enable: true,
+              enable_text: false,
+            },
+            open_tracking: {
+              enable: true,
+            },
+          },
         }),
       });
 
