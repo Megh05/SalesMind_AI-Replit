@@ -15,6 +15,7 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import Papa from "papaparse";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { generateToken, authenticate, type AuthRequest } from "./middleware/auth";
 
 export function registerRoutes(app: Express): Server {
@@ -568,6 +569,31 @@ export function registerRoutes(app: Express): Server {
   });
 
   // ============================================
+  // MESSAGE ROUTES
+  // ============================================
+
+  app.get("/api/messages", async (req, res) => {
+    try {
+      const messages = await storage.getMessages();
+      res.json(messages);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/messages/:id", async (req, res) => {
+    try {
+      const message = await storage.getMessageById(req.params.id);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+      res.json(message);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
   // AI MESSAGE GENERATION ROUTE
   // ============================================
 
@@ -642,6 +668,248 @@ The message should be professional, concise, and include a clear call-to-action.
       res.json({ message: generatedMessage });
     } catch (error: any) {
       console.error("AI generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ============================================
+  // WEBHOOK ROUTES (Email Tracking)
+  // ============================================
+
+  // Helper function to verify SendGrid webhook signature
+  async function verifySendGridSignature(
+    payload: string,
+    signature: string,
+    timestamp: string
+  ): Promise<boolean> {
+    try {
+      const sendgridConfig = await storage.getIntegrationSettingByProvider("sendgrid");
+      if (!sendgridConfig || !sendgridConfig.config.webhookVerificationKey) {
+        console.warn("SendGrid webhook verification key not configured");
+        return false;
+      }
+
+      const verificationKey = sendgridConfig.config.webhookVerificationKey as string;
+      const signedPayload = timestamp + payload;
+      const expectedSignature = crypto
+        .createHmac("sha256", verificationKey)
+        .update(signedPayload)
+        .digest("base64");
+
+      return crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+      );
+    } catch (error) {
+      console.error("SendGrid signature verification error:", error);
+      return false;
+    }
+  }
+
+  // Helper function to verify Twilio webhook signature
+  async function verifyTwilioSignature(
+    url: string,
+    params: Record<string, string>,
+    signature: string
+  ): Promise<boolean> {
+    try {
+      const twilioConfig = await storage.getIntegrationSettingByProvider("twilio");
+      if (!twilioConfig || !twilioConfig.config.authToken) {
+        console.warn("Twilio auth token not configured");
+        return false;
+      }
+
+      const authToken = twilioConfig.config.authToken as string;
+
+      // Sort params alphabetically and create the signature base
+      const sortedKeys = Object.keys(params).sort();
+      let data = url;
+      for (const key of sortedKeys) {
+        data += key + params[key];
+      }
+
+      const expectedSignature = crypto
+        .createHmac("sha1", authToken)
+        .update(Buffer.from(data, "utf-8"))
+        .digest("base64");
+
+      return crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+      );
+    } catch (error) {
+      console.error("Twilio signature verification error:", error);
+      return false;
+    }
+  }
+
+  app.post("/api/webhooks/sendgrid", async (req, res) => {
+    try {
+      // Verify SendGrid webhook signature
+      const signature = req.headers["x-twilio-email-event-webhook-signature"] as string;
+      const timestamp = req.headers["x-twilio-email-event-webhook-timestamp"] as string;
+
+      if (signature && timestamp) {
+        const rawBody = (req as any).rawBody;
+        if (!rawBody) {
+          console.error("No raw body available for signature verification");
+          return res.status(400).json({ error: "Raw body required for signature verification" });
+        }
+        
+        const payload = rawBody.toString("utf-8");
+        const isValid = await verifySendGridSignature(payload, signature, timestamp);
+        
+        if (!isValid) {
+          console.warn("Invalid SendGrid webhook signature");
+          return res.status(403).json({ error: "Invalid signature" });
+        }
+        
+        console.log("SendGrid webhook signature verified successfully");
+      } else {
+        console.warn("SendGrid webhook received without signature - accepting in development");
+      }
+
+      const events = Array.isArray(req.body) ? req.body : [req.body];
+
+      for (const event of events) {
+        const { event: eventType, sg_message_id, email, timestamp } = event;
+        
+        if (!sg_message_id) {
+          continue;
+        }
+
+        // Find message by SendGrid message ID
+        const messages = await storage.getMessages();
+        const message = messages.find(
+          (m) => m.metadata && (m.metadata as any).sendgridMessageId === sg_message_id
+        );
+
+        if (!message) {
+          console.log(`Message not found for SendGrid ID: ${sg_message_id}`);
+          continue;
+        }
+
+        const eventDate = timestamp ? new Date(timestamp * 1000) : new Date();
+
+        // Update message based on event type
+        switch (eventType) {
+          case "delivered":
+            await storage.updateMessage(message.id, {
+              status: "delivered",
+              deliveredAt: eventDate,
+            });
+            console.log(`Email delivered: ${message.id}`);
+            break;
+
+          case "open":
+            if (!message.openedAt) {
+              await storage.updateMessage(message.id, {
+                openedAt: eventDate,
+              });
+              console.log(`Email opened: ${message.id}`);
+            }
+            break;
+
+          case "click":
+            if (!message.clickedAt) {
+              await storage.updateMessage(message.id, {
+                clickedAt: eventDate,
+              });
+              console.log(`Email clicked: ${message.id}`);
+            }
+            break;
+
+          case "bounce":
+          case "dropped":
+            await storage.updateMessage(message.id, {
+              status: "failed",
+            });
+            console.log(`Email ${eventType}: ${message.id}`);
+            break;
+
+          case "spamreport":
+            await storage.updateMessage(message.id, {
+              status: "failed",
+            });
+            console.log(`Email marked as spam: ${message.id}`);
+            break;
+
+          default:
+            console.log(`Unhandled event type: ${eventType}`);
+        }
+      }
+
+      res.status(200).json({ received: true });
+    } catch (error: any) {
+      console.error("Webhook processing error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/webhooks/twilio", async (req, res) => {
+    try {
+      // Verify Twilio webhook signature
+      const signature = req.headers["x-twilio-signature"] as string;
+      
+      if (signature) {
+        const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+        const host = req.headers["host"];
+        const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
+        
+        const isValid = await verifyTwilioSignature(fullUrl, req.body, signature);
+        
+        if (!isValid) {
+          console.warn("Invalid Twilio webhook signature");
+          return res.status(403).json({ error: "Invalid signature" });
+        }
+        
+        console.log("Twilio webhook signature verified successfully");
+      } else {
+        console.warn("Twilio webhook received without signature - accepting in development");
+      }
+
+      const { MessageSid, MessageStatus, To, From, Body } = req.body;
+
+      if (!MessageSid) {
+        return res.status(400).json({ error: "Missing MessageSid" });
+      }
+
+      // Find message by Twilio message SID
+      const messages = await storage.getMessages();
+      const message = messages.find(
+        (m) => m.metadata && (m.metadata as any).twilioMessageSid === MessageSid
+      );
+
+      if (!message) {
+        console.log(`Message not found for Twilio SID: ${MessageSid}`);
+        return res.status(200).json({ received: true });
+      }
+
+      // Update message based on status
+      switch (MessageStatus) {
+        case "delivered":
+          await storage.updateMessage(message.id, {
+            status: "delivered",
+            deliveredAt: new Date(),
+          });
+          console.log(`SMS delivered: ${message.id}`);
+          break;
+
+        case "failed":
+        case "undelivered":
+          await storage.updateMessage(message.id, {
+            status: "failed",
+          });
+          console.log(`SMS ${MessageStatus}: ${message.id}`);
+          break;
+
+        default:
+          console.log(`SMS status update: ${MessageStatus} for ${message.id}`);
+      }
+
+      res.status(200).json({ received: true });
+    } catch (error: any) {
+      console.error("Twilio webhook error:", error);
       res.status(500).json({ error: error.message });
     }
   });

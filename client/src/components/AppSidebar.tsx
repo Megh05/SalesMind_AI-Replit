@@ -4,6 +4,7 @@ import {
   Workflow,
   UserCircle,
   BarChart3,
+  Inbox,
   Settings,
 } from "lucide-react";
 import {
@@ -45,6 +46,11 @@ const menuItems = [
     title: "Analytics",
     url: "/analytics",
     icon: BarChart3,
+  },
+  {
+    title: "Messages",
+    url: "/messages",
+    icon: Inbox,
   },
   {
     title: "Settings",

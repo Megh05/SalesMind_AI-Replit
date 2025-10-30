@@ -13,6 +13,7 @@ import Workflows from "@/pages/Workflows";
 import WorkflowBuilderPage from "@/pages/WorkflowBuilder";
 import Personas from "@/pages/Personas";
 import Analytics from "@/pages/Analytics";
+import Messages from "@/pages/Messages";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/workflows/:id" component={WorkflowBuilderPage} />
       <Route path="/personas" component={Personas} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/messages" component={Messages} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

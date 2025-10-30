@@ -255,7 +255,12 @@ The message should be professional, concise, and include a clear call-to-action.
       throw new Error(`Failed to send email: ${result.error}`);
     }
 
-    // Record message in database with tracking metadata
+    // Record message in database with tracking metadata including messageId
+    const metadata: Record<string, any> = {};
+    if (result.messageId) {
+      metadata.sendgridMessageId = result.messageId;
+    }
+
     await storage.createMessage({
       executionId: context.executionId,
       leadId: context.leadId,
@@ -263,11 +268,11 @@ The message should be professional, concise, and include a clear call-to-action.
       channel: result.channel,
       content,
       status: "sent",
-      metadata: result.messageId ? { sendgridMessageId: result.messageId } as any : undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata as any : undefined,
       sentAt: new Date(),
     });
 
-    console.log(`Email sent to ${context.lead.email} via ${result.channel}`);
+    console.log(`Email sent to ${context.lead.email} via ${result.channel} (messageId: ${result.messageId || "none"})`);
   }
 
   private async executeSMSNode(node: WorkflowNode, context: WorkflowExecutionContext): Promise<void> {
@@ -286,7 +291,12 @@ The message should be professional, concise, and include a clear call-to-action.
       throw new Error(`Failed to send SMS: ${result.error}`);
     }
 
-    // Record message in database with tracking metadata
+    // Record message in database with tracking metadata including messageId
+    const metadata: Record<string, any> = {};
+    if (result.messageId) {
+      metadata.twilioMessageSid = result.messageId;
+    }
+
     await storage.createMessage({
       executionId: context.executionId,
       leadId: context.leadId,
@@ -294,11 +304,11 @@ The message should be professional, concise, and include a clear call-to-action.
       channel: result.channel,
       content,
       status: "sent",
-      metadata: result.messageId ? { twilioMessageSid: result.messageId } as any : undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata as any : undefined,
       sentAt: new Date(),
     });
 
-    console.log(`SMS sent to ${context.lead.phone} via ${result.channel}`);
+    console.log(`SMS sent to ${context.lead.phone} via ${result.channel} (messageId: ${result.messageId || "none"})`);
   }
 
   private async executeWaitNode(node: WorkflowNode, context: WorkflowExecutionContext): Promise<void> {

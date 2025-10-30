@@ -207,7 +207,7 @@ export class ChannelAdapterService {
   async getAvailableChannels(): Promise<string[]> {
     const available: string[] = [];
     
-    for (const [name, adapter] of this.adapters.entries()) {
+    for (const [name, adapter] of Array.from(this.adapters.entries())) {
       if (await adapter.isAvailable()) {
         available.push(name);
       }
